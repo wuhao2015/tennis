@@ -1,0 +1,21 @@
+* { box-sizing: border-box }
+body { margin: 0; background: #f5f7f5; color: #19332c; font: 1rem/1.6 "Inter",system-ui,sans-serif }
+header { background: #133f33; color: white }
+nav, main { max-width: 62rem; margin: auto; padding: 1rem 1.4rem }
+nav, .actions { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap }
+nav a, nav .link { color: white }
+.brand { margin-right: auto; font-size: 1.25rem; font-weight: 750; text-decoration: none }
+main { padding-bottom: 4rem }
+h1 { margin: 2rem 0 1.3rem; font-size: clamp(2rem,5vw,3rem); letter-spacing: -.04em }
+h2,h3,p { margin: 0 0 .7rem }
+section, article { margin: 1rem 0; padding: 1.25rem; border: 1px solid #cedbd4; border-radius: .7rem; background: white }
+label { display: grid; gap: .25rem; margin: .6rem 0; max-width: 28rem }
+input, select, button { font: inherit; max-width: 100%; border-radius: .35rem; padding: .48rem .72rem }
+input, select { border: 1px solid #859b90; background: white }
+button { color: white; background: #196347; border: 0; cursor: pointer }
+a, .link { color: #13563f }
+.link { background: transparent; padding: 0; text-decoration: underline }
+.notice { border-left: .3rem solid #397554; padding: .5rem 1rem }
+.error { color: #8c2e1e; background: #fff4ee }
+li { margin-bottom: .45rem }
+small { font-size: .875rem }
