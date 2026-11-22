@@ -45,5 +45,20 @@ class GroupLessonTest extends TestCase
         $this->assertSame('open', $group->fresh()->status);
         $this->assertEquals(2, CreditAccount::where('balance', 1.75)->where('frozen', 0)->count());
         $this->get(route('studios.show', $studio))->assertOk()->assertSee('已开班');
+
+        $third = User::factory()->create();
+        $studio->memberships()->create(['user_id' => $third->id, 'status' => 'approved']);
+        CreditAccount::create(['studio_id' => $studio->id, 'user_id' => $third->id, 'balance' => 3]);
+        $this->actingAs($third)->post(route('groups.join', $group), ['token' => Str::uuid()->toString()])->assertSessionHasNoErrors();
+        $this->assertDatabaseHas('credit_accounts', ['user_id' => $third->id, 'balance' => 1.75, 'frozen' => 0]);
+        $this->travelTo($group->starts_at->subHours(2));
+        $this->post(route('groups.leave', $group), ['token' => Str::uuid()->toString()])->assertSessionHasNoErrors();
+        $this->actingAs($students->first())->post(route('groups.leave', $group), ['token' => Str::uuid()->toString()])->assertSessionHasErrors('lesson');
+        $this->post(route('groups.cancel', $group), ['token' => Str::uuid()->toString()])->assertForbidden();
+        $this->travel(3)->hours();
+        $this->actingAs($admin)->post(route('groups.cancel', $group), ['token' => Str::uuid()->toString()])->assertRedirect();
+        $this->assertSame('cancelled', $group->fresh()->status);
+        $this->assertEquals(3, CreditAccount::where('balance', 3)->where('frozen', 0)->count());
+        $this->assertEquals(3, $group->enrollments()->where('status','released')->count());
     }
 }

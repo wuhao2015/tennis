@@ -44,7 +44,7 @@ class CreditService
     {
         $amount = self::hundredths($seat->amount);
         $this->change($studio, $seat->user_id, -$amount, $seat->status === 'frozen' ? -$amount : 0, '上课扣款', $operation);
-        $seat->update(['status' => 'paid']);
+        $seat->fill(['status' => 'paid'])->save();
     }
 
     public function release(Studio $studio, Enrollment $seat, int $operation): void

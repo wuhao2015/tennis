@@ -14,10 +14,13 @@
 <article><h3>{{ $group->starts_at->format('Y-m-d H:i') }} · {{ $group->statusLabel() }}</h3>
 <p>{{ $group->coaches->pluck('nickname')->join('、') }} · 每人 {{ $group->price }} 课时</p>
 <p>已报 {{ $group->enrollments->whereIn('status',['frozen','paid'])->count() }} / {{ $group->maximum }} 人 · {{ $group->minimum }} 人开班</p>
-@if($group->status === 'recruiting')
-@if($seat && $seat->status === 'frozen')
-<form method="post" action="{{ route('groups.leave',$group) }}">@csrf <x-token/><button>撤回报名</button></form>
-@elseif(!$group->coaches->contains(auth()->id()))
+@if(in_array($group->status,['recruiting','open']))
+@can('manage',$studio)
+<form method="post" action="{{ route('groups.cancel',$group) }}">@csrf <x-token/><button>取消整班</button></form>
+@endcan
+@if($seat && in_array($seat->status,['frozen','paid']))
+<form method="post" action="{{ route('groups.leave',$group) }}">@csrf <x-token/><button>{{ $seat->status === 'paid' ? '退出团课' : '撤回报名' }}</button></form>
+@elseif(!$group->coaches->contains(auth()->id()) && $group->enrollments->whereIn('status',['frozen','paid'])->count() < $group->maximum)
 <form method="post" action="{{ route('groups.join',$group) }}">@csrf <x-token/><button>报名</button></form>
 @endif
 @endif</article>

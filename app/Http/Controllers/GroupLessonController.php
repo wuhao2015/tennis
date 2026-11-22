@@ -31,6 +31,14 @@ class GroupLessonController extends Controller
         return back();
     }
 
+    public function cancel(Request $request, Lesson $lesson, GroupLessonService $groups): RedirectResponse
+    {
+        $data = $request->validate(['token' => 'required|uuid']);
+        $groups->cancel($lesson, $request->user(), $data['token']);
+
+        return back();
+    }
+
     public function leave(Request $request, Lesson $lesson, GroupLessonService $groups): RedirectResponse
     {
         $data = $request->validate(['token' => 'required|uuid']);

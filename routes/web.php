@@ -30,5 +30,6 @@ Route::middleware('auth')->group(function () {
     Route::post('/studios/{studio}/groups', [GroupLessonController::class, 'store'])->name('groups.store');
     Route::post('/groups/{lesson}/join', [GroupLessonController::class, 'join'])->name('groups.join');
     Route::post('/groups/{lesson}/leave', [GroupLessonController::class, 'leave'])->name('groups.leave');
+    Route::post('/groups/{lesson}/cancel', [GroupLessonController::class, 'cancel'])->name('groups.cancel');
     Route::post('/logout', [AuthController::class, 'logout'])->name('logout');
 });

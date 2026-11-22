@@ -38,7 +38,7 @@ class GroupLessonService
             $lesson->refresh();
             abort_unless($studio->members()->whereKey($student->id)->exists(), 403);
             $this->schedule->checkWindow($lesson->starts_at);
-            if ($lesson->status !== 'recruiting') {
+            if (! in_array($lesson->status, ['recruiting', 'open'], true)) {
                 throw ValidationException::withMessages(['lesson' => '本班已结束招募。']);
             }
             $seat = $lesson->enrollments()->firstOrNew(['user_id' => $student->id]);
@@ -47,6 +47,12 @@ class GroupLessonService
             }
             if ($this->schedule->peopleBusy([$student->id], $lesson->starts_at) || $lesson->enrollments()->whereIn('status', ['frozen', 'paid'])->count() >= $lesson->maximum) {
                 throw ValidationException::withMessages(['lesson' => '学员时段冲突或人数已满。']);
+            }
+            if ($lesson->status === 'open') {
+                $seat->amount = $lesson->price;
+                $this->credits->charge($studio, $seat, $operation);
+
+                return;
             }
             $seat->fill(['amount' => $lesson->price, 'status' => 'frozen'])->save();
             $this->credits->change($studio, $student->id, 0, CreditService::hundredths($seat->amount), '团课冻结', $operation);
@@ -75,8 +81,25 @@ class GroupLessonService
         StudioTransaction::run($lesson->studio, [$student->id], $student->id, 'group.leave', $token, function (Studio $studio, int $operation) use ($lesson, $student) {
             $lesson->refresh();
             $seat = $lesson->enrollments()->where('user_id', $student->id)->firstOrFail();
-            if ($lesson->status === 'recruiting') {
-                $this->credits->release($studio, $seat, $operation);
+            if ($seat->status === 'released') {
+                return;
+            }
+            if ($lesson->status === 'open' && (now() > $lesson->starts_at->subHours(2)
+                || $lesson->enrollments()->where('status', 'paid')->count() <= $lesson->minimum)) {
+                throw ValidationException::withMessages(['lesson' => '已过退出期限，或退出后不足开班人数。']);
+            }
+            $this->credits->release($studio, $seat, $operation);
+        });
+    }
+
+    public function cancel(Lesson $lesson, User $admin, string $token): void
+    {
+        abort_unless($lesson->type === 'group', 404);
+        StudioTransaction::run($lesson->studio, fn () => $lesson->participantIds(), $admin->id, 'group.cancel', $token, function (Studio $studio, int $operation) use ($lesson, $admin) {
+            abort_unless($admin->can('manage', $studio), 403);
+            $lesson->refresh();
+            if (in_array($lesson->status, ['recruiting', 'open'], true)) {
+                $this->close($studio, $lesson, $operation);
             }
         });
     }
