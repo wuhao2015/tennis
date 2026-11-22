@@ -29,13 +29,12 @@ class ScheduleService
         }
     }
 
-    public function checkCoaches(Studio $studio, array $ids, CarbonImmutable $start): void
+    public function coachesAvailable(Studio $studio, array $ids, CarbonImmutable $start): bool
     {
         $available = DB::table('coach_slots')->where('studio_id', $studio->id)->whereIn('user_id', $ids)
             ->where('starts_at', $start)->count();
-        if ($studio->coaches()->whereKey($ids)->count() !== count($ids) || $available !== count($ids)) {
-            throw ValidationException::withMessages(['coaches' => '教练尚未开放该时段。']);
-        }
+
+        return $studio->coaches()->whereKey($ids)->count() === count($ids) && $available === count($ids);
     }
 
     public function overlaps(CarbonImmutable $start, ?int $except = null): Builder

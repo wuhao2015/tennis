@@ -36,7 +36,9 @@ class StudioController extends Controller
                 ->orWhereHas('enrollments', fn ($q) => $q->where('user_id', $request->user()?->id)))
             ->with('coaches', 'enrollments.user')->orderByDesc('starts_at')->get();
 
-        return view('studio', compact('studio', 'membership', 'account', 'creditRequests', 'slots', 'bookings'));
+        $groups = Lesson::where('studio_id', $studio->id)->where('type', 'group')->with('coaches', 'enrollments')->orderByDesc('starts_at')->get();
+
+        return view('studio', compact('studio', 'membership', 'account', 'creditRequests', 'slots', 'bookings', 'groups'));
     }
 
     public function join(Request $request, Studio $studio): RedirectResponse

@@ -8,6 +8,7 @@
 @else<p>已加入工作室</p>
 @include('credits')
 @include('bookings')
+@include('groups')
 @endif
 @endguest
 @can('manage', $studio)

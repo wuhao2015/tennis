@@ -26,6 +26,7 @@ class Lesson extends Model
     public function statusLabel(): string
     {
         return match ($this->status) {
+            'recruiting' => '招募中', 'open' => '已开班',
             'pending' => '待确认', 'confirmed' => $this->cancel_requested_by ? '等待对方同意取消' : '已确认',
             'no_court' => '无可用球场', 'declined' => '已拒绝', 'withdrawn' => '已撤回',
             'cancelled' => '已取消', 'expired' => '已逾期',

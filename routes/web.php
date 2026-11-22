@@ -3,6 +3,7 @@
 use App\Http\Controllers\AuthController;
 use App\Http\Controllers\BookingController;
 use App\Http\Controllers\CreditController;
+use App\Http\Controllers\GroupLessonController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\StudioController;
 use Illuminate\Support\Facades\Route;
@@ -26,5 +27,8 @@ Route::middleware('auth')->group(function () {
     Route::post('/studios/{studio}/slots', [BookingController::class, 'slot'])->name('bookings.slot');
     Route::post('/studios/{studio}/bookings', [BookingController::class, 'store'])->name('bookings.store');
     Route::post('/bookings/{lesson}', [BookingController::class, 'act'])->name('bookings.act');
+    Route::post('/studios/{studio}/groups', [GroupLessonController::class, 'store'])->name('groups.store');
+    Route::post('/groups/{lesson}/join', [GroupLessonController::class, 'join'])->name('groups.join');
+    Route::post('/groups/{lesson}/leave', [GroupLessonController::class, 'leave'])->name('groups.leave');
     Route::post('/logout', [AuthController::class, 'logout'])->name('logout');
 });

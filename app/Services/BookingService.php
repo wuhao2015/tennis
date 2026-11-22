@@ -60,7 +60,9 @@ class BookingService
             abort_unless($studio->members()->whereKey($student->id)->exists(), 403);
             $start = $this->schedule->start($input);
             $this->schedule->checkWindow($start);
-            $this->schedule->checkCoaches($studio, [$coachId], $start);
+            if (! $this->schedule->coachesAvailable($studio, [$coachId], $start)) {
+                throw ValidationException::withMessages(['coach_id' => '教练尚未开放该时段。']);
+            }
             if ($student->id === $coachId || $this->schedule->peopleBusy([$student->id, $coachId], $start)) {
                 throw ValidationException::withMessages(['starts_at' => '学员或教练时段冲突。']);
             }
