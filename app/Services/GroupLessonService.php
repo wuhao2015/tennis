@@ -64,7 +64,7 @@ class GroupLessonService
             if (! $this->schedule->coachesAvailable($studio, $coaches, $lesson->starts_at)
                 || ! $this->schedule->courtAvailable($studio, $lesson->starts_at, $lesson->id)
                 || $this->schedule->peopleBusy([...$coaches, ...$seats->pluck('user_id')], $lesson->starts_at, $lesson->id)) {
-                $this->close($studio, $lesson, $operation);
+                $this->credits->closeLesson($studio, $lesson, $operation, 'cancelled');
 
                 return;
             }
@@ -99,16 +99,8 @@ class GroupLessonService
             abort_unless($admin->can('manage', $studio), 403);
             $lesson->refresh();
             if (in_array($lesson->status, ['recruiting', 'open'], true)) {
-                $this->close($studio, $lesson, $operation);
+                $this->credits->closeLesson($studio, $lesson, $operation, 'cancelled');
             }
         });
-    }
-
-    private function close(Studio $studio, Lesson $lesson, int $operation): void
-    {
-        foreach ($lesson->enrollments()->whereIn('status', ['frozen', 'paid'])->get() as $seat) {
-            $this->credits->release($studio, $seat, $operation);
-        }
-        $lesson->update(['status' => 'cancelled']);
     }
 }

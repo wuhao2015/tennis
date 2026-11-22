@@ -29,8 +29,7 @@ class BookingService
 
                     return;
                 }
-                $this->credits->release($studio, $seat, $operation);
-                $lesson->update(['status' => 'cancelled']);
+                $this->credits->closeLesson($studio, $lesson, $operation, 'cancelled');
 
                 return;
             }
@@ -47,10 +46,10 @@ class BookingService
             };
             if ($status === 'confirmed') {
                 $this->credits->charge($studio, $seat, $operation);
+                $lesson->update(['status' => $status]);
             } else {
-                $this->credits->release($studio, $seat, $operation);
+                $this->credits->closeLesson($studio, $lesson, $operation, $status);
             }
-            $lesson->update(['status' => $status]);
         });
     }
 

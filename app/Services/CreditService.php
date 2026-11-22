@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\CreditAccount;
 use App\Models\CreditRequest;
 use App\Models\Enrollment;
+use App\Models\Lesson;
 use App\Models\Studio;
 use App\Models\User;
 use Illuminate\Validation\ValidationException;
@@ -45,6 +46,14 @@ class CreditService
         $amount = self::hundredths($seat->amount);
         $this->change($studio, $seat->user_id, -$amount, $seat->status === 'frozen' ? -$amount : 0, '上课扣款', $operation);
         $seat->fill(['status' => 'paid'])->save();
+    }
+
+    public function closeLesson(Studio $studio, Lesson $lesson, int $operation, string $status): void
+    {
+        foreach ($lesson->enrollments()->whereIn('status', ['frozen', 'paid'])->get() as $seat) {
+            $this->release($studio, $seat, $operation);
+        }
+        $lesson->update(['status' => $status]);
     }
 
     public function release(Studio $studio, Enrollment $seat, int $operation): void
