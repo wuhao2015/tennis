@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Models\CreditAccount;
 use App\Models\CreditRequest;
+use App\Models\Lesson;
 use App\Models\Membership;
 use App\Models\Studio;
 use Illuminate\Http\RedirectResponse;
@@ -28,7 +29,14 @@ class StudioController extends Controller
             ->when(! $request->user()?->can('manage', $studio), fn ($query) => $query->where('user_id', $request->user()?->id))
             ->with('user')->latest('id')->get();
 
-        return view('studio', compact('studio', 'membership', 'account', 'creditRequests'));
+        $slots = DB::table('coach_slots')->join('users', 'users.id', '=', 'coach_slots.user_id')
+            ->where('studio_id', $studio->id)->where('starts_at', '>=', now())->orderBy('starts_at')->get(['starts_at', 'nickname']);
+        $bookings = Lesson::where('studio_id', $studio->id)->where('type', 'private')
+            ->where(fn ($q) => $q->whereHas('coaches', fn ($q) => $q->whereKey([$request->user()?->id]))
+                ->orWhereHas('enrollments', fn ($q) => $q->where('user_id', $request->user()?->id)))
+            ->with('coaches', 'enrollments.user')->orderByDesc('starts_at')->get();
+
+        return view('studio', compact('studio', 'membership', 'account', 'creditRequests', 'slots', 'bookings'));
     }
 
     public function join(Request $request, Studio $studio): RedirectResponse

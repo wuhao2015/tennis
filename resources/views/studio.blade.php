@@ -7,6 +7,7 @@
 @elseif($membership->status === 'pending')<p>入会申请待审批</p>
 @else<p>已加入工作室</p>
 @include('credits')
+@include('bookings')
 @endif
 @endguest
 @can('manage', $studio)

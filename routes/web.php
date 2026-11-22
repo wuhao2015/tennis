@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\AuthController;
+use App\Http\Controllers\BookingController;
 use App\Http\Controllers\CreditController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\StudioController;
@@ -22,5 +23,7 @@ Route::middleware('auth')->group(function () {
     Route::post('/studios/{studio}/courts', [StudioController::class, 'courts'])->name('studios.courts');
     Route::post('/studios/{studio}/credits', [CreditController::class, 'store'])->name('credits.store');
     Route::post('/studios/{studio}/credits/{credit}', [CreditController::class, 'decide'])->name('credits.decide');
+    Route::post('/studios/{studio}/slots', [BookingController::class, 'slot'])->name('bookings.slot');
+    Route::post('/studios/{studio}/bookings', [BookingController::class, 'store'])->name('bookings.store');
     Route::post('/logout', [AuthController::class, 'logout'])->name('logout');
 });
