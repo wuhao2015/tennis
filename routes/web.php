@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\AuthController;
+use App\Http\Controllers\CreditController;
 use App\Http\Controllers\ProfileController;
 use App\Http\Controllers\StudioController;
 use Illuminate\Support\Facades\Route;
@@ -19,5 +20,7 @@ Route::middleware('auth')->group(function () {
     Route::post('/studios/{studio}/join', [StudioController::class, 'join'])->name('studios.join');
     Route::post('/studios/{studio}/memberships/{membership}', [StudioController::class, 'decide'])->name('memberships.decide');
     Route::post('/studios/{studio}/courts', [StudioController::class, 'courts'])->name('studios.courts');
+    Route::post('/studios/{studio}/credits', [CreditController::class, 'store'])->name('credits.store');
+    Route::post('/studios/{studio}/credits/{credit}', [CreditController::class, 'decide'])->name('credits.decide');
     Route::post('/logout', [AuthController::class, 'logout'])->name('logout');
 });

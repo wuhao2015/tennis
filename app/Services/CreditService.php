@@ -1,0 +1,71 @@
+<?php
+
+namespace App\Services;
+
+use App\Models\CreditAccount;
+use App\Models\CreditRequest;
+use App\Models\Studio;
+use App\Models\User;
+use Illuminate\Validation\ValidationException;
+
+class CreditService
+{
+    public static function hundredths(string $decimal): int
+    {
+        [$whole, $fraction] = array_pad(explode('.', ltrim($decimal, '-')), 2, '');
+        $units = (int) $whole * 100 + (int) str_pad($fraction, 2, '0');
+
+        return str_starts_with($decimal, '-') ? -$units : $units;
+    }
+
+    public static function decimal(int $units): string
+    {
+        return ($units < 0 ? '-' : '').intdiv(abs($units), 100).'.'.str_pad((string) (abs($units) % 100), 2, '0', STR_PAD_LEFT);
+    }
+
+    /** Called inside the studio transaction with the account owner locked. */
+    public function change(Studio $studio, int $userId, int $balanceChange, int $frozenChange, string $reason, int $operation): void
+    {
+        $account = CreditAccount::firstOrNew(['studio_id' => $studio->id, 'user_id' => $userId]);
+        $balance = self::hundredths($account->balance ?? '0') + $balanceChange;
+        $frozen = self::hundredths($account->frozen ?? '0') + $frozenChange;
+        if ($balance < $frozen || $frozen < 0 || $balance > 999999999999) {
+            throw ValidationException::withMessages(['amount' => '余额不足或超出课时范围。']);
+        }
+        $account->fill(['balance' => self::decimal($balance), 'frozen' => self::decimal($frozen)])->save();
+        $account->entries()->create([
+            'operation_id' => $operation, 'reason' => $reason,
+            'balance_change' => self::decimal($balanceChange), 'frozen_change' => self::decimal($frozenChange),
+        ]);
+    }
+
+    public function submit(Studio $studio, User $actor, int $userId, string $amount, string $token): void
+    {
+        StudioTransaction::run($studio, [$userId], $actor->id, 'credit.request', $token, function (Studio $studio) use ($actor, $userId, $amount) {
+            abort_unless($studio->members()->whereKey($userId)->exists(), 403);
+            if ($actor->id === $userId) {
+                abort_unless(self::hundredths($amount) > 0, 403);
+            } else {
+                abort_unless($actor->can('manage', $studio), 403);
+            }
+            CreditRequest::create(['studio_id' => $studio->id, 'user_id' => $userId, 'requested_by' => $actor->id, 'amount' => $amount]);
+        });
+    }
+
+    public function decide(Studio $studio, CreditRequest $credit, User $actor, string $decision, string $token): void
+    {
+        abort_unless($credit->studio_id === $studio->id, 404);
+        StudioTransaction::run($studio, [$credit->user_id], $actor->id, 'credit.'.$decision, $token, function (Studio $studio, int $operation) use ($credit, $actor, $decision) {
+            $credit->refresh();
+            $studentRequest = $credit->user_id === $credit->requested_by;
+            abort_unless($actor->id !== $credit->requested_by && ($studentRequest ? $actor->can('manage', $studio) : $actor->id === $credit->user_id), 403);
+            if ($credit->status !== 'pending') {
+                return;
+            }
+            if ($decision === 'approved') {
+                $this->change($studio, $credit->user_id, self::hundredths($credit->amount), 0, '课时调整', $operation);
+            }
+            $credit->update(['status' => $decision]);
+        });
+    }
+}

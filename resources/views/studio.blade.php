@@ -6,6 +6,7 @@
 <form method="post" action="{{ route('studios.join', $studio) }}">@csrf<button>申请加入</button></form>
 @elseif($membership->status === 'pending')<p>入会申请待审批</p>
 @else<p>已加入工作室</p>
+@include('credits')
 @endif
 @endguest
 @can('manage', $studio)

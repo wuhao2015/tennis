@@ -2,6 +2,8 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\CreditAccount;
+use App\Models\CreditRequest;
 use App\Models\Membership;
 use App\Models\Studio;
 use Illuminate\Http\RedirectResponse;
@@ -21,7 +23,12 @@ class StudioController extends Controller
     {
         $membership = $studio->memberships()->where('user_id', $request->user()?->id)->first();
 
-        return view('studio', compact('studio', 'membership'));
+        $account = CreditAccount::where('studio_id', $studio->id)->where('user_id', $request->user()?->id)->first();
+        $creditRequests = CreditRequest::where('studio_id', $studio->id)
+            ->when(! $request->user()?->can('manage', $studio), fn ($query) => $query->where('user_id', $request->user()?->id))
+            ->with('user')->latest('id')->get();
+
+        return view('studio', compact('studio', 'membership', 'account', 'creditRequests'));
     }
 
     public function join(Request $request, Studio $studio): RedirectResponse
