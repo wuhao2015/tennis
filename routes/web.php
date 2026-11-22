@@ -25,5 +25,6 @@ Route::middleware('auth')->group(function () {
     Route::post('/studios/{studio}/credits/{credit}', [CreditController::class, 'decide'])->name('credits.decide');
     Route::post('/studios/{studio}/slots', [BookingController::class, 'slot'])->name('bookings.slot');
     Route::post('/studios/{studio}/bookings', [BookingController::class, 'store'])->name('bookings.store');
+    Route::post('/bookings/{lesson}', [BookingController::class, 'act'])->name('bookings.act');
     Route::post('/logout', [AuthController::class, 'logout'])->name('logout');
 });

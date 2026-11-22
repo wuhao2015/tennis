@@ -4,6 +4,7 @@ namespace App\Services;
 
 use App\Models\CreditAccount;
 use App\Models\CreditRequest;
+use App\Models\Enrollment;
 use App\Models\Studio;
 use App\Models\User;
 use Illuminate\Validation\ValidationException;
@@ -37,6 +38,26 @@ class CreditService
             'operation_id' => $operation, 'reason' => $reason,
             'balance_change' => self::decimal($balanceChange), 'frozen_change' => self::decimal($frozenChange),
         ]);
+    }
+
+    public function charge(Studio $studio, Enrollment $seat, int $operation): void
+    {
+        $amount = self::hundredths($seat->amount);
+        $this->change($studio, $seat->user_id, -$amount, $seat->status === 'frozen' ? -$amount : 0, '上课扣款', $operation);
+        $seat->update(['status' => 'paid']);
+    }
+
+    public function release(Studio $studio, Enrollment $seat, int $operation): void
+    {
+        $amount = self::hundredths($seat->amount);
+        if ($seat->status === 'frozen') {
+            $this->change($studio, $seat->user_id, 0, -$amount, '取消解冻', $operation);
+        } elseif ($seat->status === 'paid') {
+            $this->change($studio, $seat->user_id, $amount, 0, '退还课时', $operation);
+        } else {
+            return;
+        }
+        $seat->update(['status' => 'released']);
     }
 
     public function submit(Studio $studio, User $actor, int $userId, string $amount, string $token): void

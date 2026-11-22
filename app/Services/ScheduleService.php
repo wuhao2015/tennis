@@ -45,6 +45,17 @@ class ScheduleService
             ->when($except, fn ($q) => $q->where('id', '!=', $except));
     }
 
+    /** Starts are on the half hour, so occupancy is constant within each half of a lesson. */
+    public function courtAvailable(Studio $studio, CarbonImmutable $start, ?int $except = null): bool
+    {
+        $lessons = $this->overlaps($start, $except)->where('studio_id', $studio->id)
+            ->whereIn('status', ['confirmed', 'recruiting', 'open']);
+        $firstHalf = (clone $lessons)->where('starts_at', '<=', $start)->count();
+        $secondHalf = $lessons->where('starts_at', '>=', $start)->count();
+
+        return max($firstHalf, $secondHalf) < $studio->courts;
+    }
+
     public function peopleBusy(array $userIds, CarbonImmutable $start, ?int $except = null): bool
     {
         return $this->overlaps($start, $except)->where(function ($query) use ($userIds) {

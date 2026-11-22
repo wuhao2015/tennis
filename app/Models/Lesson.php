@@ -16,6 +16,22 @@ class Lesson extends Model
         return ['starts_at' => 'immutable_datetime'];
     }
 
+    public function participantIds(): array
+    {
+        return $this->coaches()->pluck('users.id')->merge(
+            $this->enrollments()->whereIn('status', ['frozen', 'paid'])->pluck('user_id')
+        )->all();
+    }
+
+    public function statusLabel(): string
+    {
+        return match ($this->status) {
+            'pending' => '待确认', 'confirmed' => $this->cancel_requested_by ? '等待对方同意取消' : '已确认',
+            'no_court' => '无可用球场', 'declined' => '已拒绝', 'withdrawn' => '已撤回',
+            'cancelled' => '已取消', 'expired' => '已逾期',
+        };
+    }
+
     public function coaches(): BelongsToMany
     {
         return $this->belongsToMany(User::class, 'lesson_coach');

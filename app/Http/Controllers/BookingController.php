@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers;
 
+use App\Models\Lesson;
 use App\Models\Studio;
 use App\Services\BookingService;
 use App\Services\ScheduleService;
@@ -11,6 +12,14 @@ use Illuminate\Support\Facades\DB;
 
 class BookingController extends Controller
 {
+    public function act(Request $request, Lesson $lesson, BookingService $bookings): RedirectResponse
+    {
+        $data = $request->validate(['action' => 'required|in:confirm,decline,withdraw,cancel', 'token' => 'required|uuid']);
+        $bookings->act($lesson, $request->user(), $data['action'], $data['token']);
+
+        return back();
+    }
+
     public function slot(Request $request, Studio $studio, ScheduleService $schedule): RedirectResponse
     {
         $data = $request->validate(['starts_at' => 'required|date_format:Y-m-d\TH:i']);

@@ -10,5 +10,13 @@
 <h3>我的一对一课程</h3>
 @forelse($bookings as $lesson)
 <article><strong>{{ $lesson->starts_at->format('m-d H:i') }} · {{ $lesson->coaches->first()->nickname }}</strong>
-<p>{{ $lesson->enrollments->first()->user->nickname }} · 待确认</p></article>
+<p>{{ $lesson->enrollments->first()->user->nickname }} · {{ $lesson->statusLabel() }}</p>
+<form method="post" action="{{ route('bookings.act',$lesson) }}">@csrf <x-token/>
+@if($lesson->status === 'pending')
+@if($lesson->coaches->contains(auth()->id()))
+<button name="action" value="confirm">确认预约</button> <button name="action" value="decline">拒绝预约</button>
+@else<button name="action" value="withdraw">撤回申请</button>@endif
+@elseif($lesson->status === 'confirmed' && $lesson->cancel_requested_by !== auth()->id())
+<button name="action" value="cancel">{{ $lesson->cancel_requested_by ? '同意取消' : '申请取消' }}</button>
+@endif</form></article>
 @empty<p>暂无预约</p>@endforelse</section>
