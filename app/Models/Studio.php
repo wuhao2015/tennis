@@ -20,6 +20,11 @@ class Studio extends Model
         return $this->belongsToMany(User::class, 'memberships')->wherePivot('status', 'approved');
     }
 
+    public function adminIds(): array
+    {
+        return $this->members()->wherePivot('is_admin', true)->pluck('users.id')->all();
+    }
+
     public function coaches(): BelongsToMany
     {
         return $this->members()->wherePivot('is_coach', true);

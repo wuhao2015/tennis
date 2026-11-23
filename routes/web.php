@@ -5,6 +5,7 @@ use App\Http\Controllers\BookingController;
 use App\Http\Controllers\CreditController;
 use App\Http\Controllers\GroupLessonController;
 use App\Http\Controllers\ProfileController;
+use App\Http\Controllers\ReminderController;
 use App\Http\Controllers\StudioController;
 use Illuminate\Support\Facades\Route;
 
@@ -31,5 +32,7 @@ Route::middleware('auth')->group(function () {
     Route::post('/groups/{lesson}/join', [GroupLessonController::class, 'join'])->name('groups.join');
     Route::post('/groups/{lesson}/leave', [GroupLessonController::class, 'leave'])->name('groups.leave');
     Route::post('/groups/{lesson}/cancel', [GroupLessonController::class, 'cancel'])->name('groups.cancel');
+    Route::get('/reminders', [ReminderController::class, 'index'])->name('reminders.index');
+    Route::post('/reminders/read', [ReminderController::class, 'read'])->name('reminders.read');
     Route::post('/logout', [AuthController::class, 'logout'])->name('logout');
 });

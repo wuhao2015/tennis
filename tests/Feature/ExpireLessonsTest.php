@@ -43,5 +43,10 @@ class ExpireLessonsTest extends TestCase
         $this->assertTrue(app(ScheduleService::class)->courtAvailable($studio, $start));
         $this->assertDatabaseCount('credit_entries', 2);
         $this->assertDatabaseCount('operations', 2);
+        foreach (Lesson::all() as $lesson) {
+            foreach ([$lesson->coaches->first(), $lesson->enrollments->first()->user] as $recipient) {
+                $this->assertStringContainsString('已逾期', $recipient->notifications()->sole()->data['message']);
+            }
+        }
     }
 }

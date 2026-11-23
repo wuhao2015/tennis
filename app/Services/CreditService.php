@@ -8,6 +8,7 @@ use App\Models\Enrollment;
 use App\Models\Lesson;
 use App\Models\Studio;
 use App\Models\User;
+use App\Notifications\StudioMessage;
 use Illuminate\Validation\ValidationException;
 
 class CreditService
@@ -50,10 +51,12 @@ class CreditService
 
     public function closeLesson(Studio $studio, Lesson $lesson, int $operation, string $status): void
     {
+        $recipients = $lesson->participantIds();
         foreach ($lesson->enrollments()->whereIn('status', ['frozen', 'paid'])->get() as $seat) {
             $this->release($studio, $seat, $operation);
         }
         $lesson->update(['status' => $status]);
+        StudioMessage::lesson($lesson, $recipients, $lesson->statusLabel());
     }
 
     public function release(Studio $studio, Enrollment $seat, int $operation): void
@@ -79,6 +82,8 @@ class CreditService
                 abort_unless($actor->can('manage', $studio), 403);
             }
             CreditRequest::create(['studio_id' => $studio->id, 'user_id' => $userId, 'requested_by' => $actor->id, 'amount' => $amount]);
+            $recipients = $actor->id === $userId ? $studio->adminIds() : [$userId];
+            StudioMessage::send($studio, array_diff($recipients, [$actor->id]), $actor->nickname.' 请求调整 '.$amount.' 课时');
         });
     }
 
@@ -96,6 +101,7 @@ class CreditService
                 $this->change($studio, $credit->user_id, self::hundredths($credit->amount), 0, '课时调整', $operation);
             }
             $credit->update(['status' => $decision]);
+            StudioMessage::send($studio, [$credit->requested_by], $credit->amount.' 课时调整'.($decision === 'approved' ? '已通过' : '已拒绝'));
         });
     }
 }

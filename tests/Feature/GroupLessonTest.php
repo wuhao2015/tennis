@@ -46,6 +46,10 @@ class GroupLessonTest extends TestCase
         $this->assertEquals(2, CreditAccount::where('balance', 1.75)->where('frozen', 0)->count());
         $this->get(route('studios.show', $studio))->assertOk()->assertSee('已开班');
 
+        foreach ([$admin, ...$students] as $recipient) {
+            $this->assertTrue($recipient->notifications()->get()->contains(fn ($message) => str_contains($message->data['message'], '已开班')));
+        }
+
         $third = User::factory()->create();
         $studio->memberships()->create(['user_id' => $third->id, 'status' => 'approved']);
         CreditAccount::create(['studio_id' => $studio->id, 'user_id' => $third->id, 'balance' => 3]);
@@ -59,6 +63,6 @@ class GroupLessonTest extends TestCase
         $this->actingAs($admin)->post(route('groups.cancel', $group), ['token' => Str::uuid()->toString()])->assertRedirect();
         $this->assertSame('cancelled', $group->fresh()->status);
         $this->assertEquals(3, CreditAccount::where('balance', 3)->where('frozen', 0)->count());
-        $this->assertEquals(3, $group->enrollments()->where('status','released')->count());
+        $this->assertEquals(3, $group->enrollments()->where('status', 'released')->count());
     }
 }

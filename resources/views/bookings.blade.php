@@ -3,7 +3,7 @@
 <form action="{{ route('bookings.slot',$studio) }}" method="post">@csrf
 <label>开放授课时段<input type="datetime-local" name="starts_at" step="1800" required></label><button>开放时段</button></form>
 @endif
-<details><summary>查看教练可约时段</summary>@forelse($slots as $slot)<p>{{ $slot->nickname }} · {{ $slot->starts_at }}</p>@empty<p>暂无开放时段</p>@endforelse</details>
+<details><summary>查看教练开放时段</summary>@forelse($slots as $slot)<p>{{ $slot->nickname }} · {{ $slot->starts_at }}</p>@empty<p>暂无开放时段</p>@endforelse</details>
 <form action="{{ route('bookings.store',$studio) }}" method="post">@csrf <x-token/>
 <label>教练<select name="coach_id">@foreach($studio->coaches as $coach)<option value="{{ $coach->id }}">{{ $coach->nickname }}</option>@endforeach</select></label>
 <label>开始时间（北京时间）<input type="datetime-local" name="starts_at" step="1800" required></label><button>提交预约</button></form>

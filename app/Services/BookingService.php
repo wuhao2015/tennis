@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Lesson;
 use App\Models\Studio;
 use App\Models\User;
+use App\Notifications\StudioMessage;
 use Illuminate\Validation\ValidationException;
 
 class BookingService
@@ -26,6 +27,7 @@ class BookingService
                 }
                 if (! $lesson->cancel_requested_by) {
                     $lesson->update(['cancel_requested_by' => $actor->id]);
+                    StudioMessage::lesson($lesson, array_diff($lesson->participantIds(), [$actor->id]), $actor->nickname.' 申请取消');
 
                     return;
                 }
@@ -47,6 +49,7 @@ class BookingService
             if ($status === 'confirmed') {
                 $this->credits->charge($studio, $seat, $operation);
                 $lesson->update(['status' => $status]);
+                StudioMessage::lesson($lesson, [$seat->user_id], '预约已确认');
             } else {
                 $this->credits->closeLesson($studio, $lesson, $operation, $status);
             }
@@ -69,6 +72,7 @@ class BookingService
             $lesson->coaches()->attach($coachId);
             $lesson->enrollments()->create(['user_id' => $student->id, 'amount' => '1.00', 'status' => 'frozen']);
             $this->credits->change($studio, $student->id, 0, 100, '预约冻结', $operation);
+            StudioMessage::lesson($lesson, [$coachId], $student->nickname.' 提交预约');
         });
     }
 }

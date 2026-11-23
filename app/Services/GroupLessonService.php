@@ -5,6 +5,7 @@ namespace App\Services;
 use App\Models\Lesson;
 use App\Models\Studio;
 use App\Models\User;
+use App\Notifications\StudioMessage;
 use Illuminate\Validation\ValidationException;
 
 class GroupLessonService
@@ -28,6 +29,7 @@ class GroupLessonService
                 'minimum' => $data['minimum'], 'maximum' => $data['maximum'], 'price' => $data['price'],
             ]);
             $lesson->coaches()->attach($ids);
+            StudioMessage::lesson($lesson, $ids, '已发布，开始招募');
         });
     }
 
@@ -51,6 +53,7 @@ class GroupLessonService
             if ($lesson->status === 'open') {
                 $seat->amount = $lesson->price;
                 $this->credits->charge($studio, $seat, $operation);
+                StudioMessage::lesson($lesson, [$student->id, ...$lesson->coaches()->pluck('users.id')], $student->nickname.' 补报成功');
 
                 return;
             }
@@ -58,6 +61,8 @@ class GroupLessonService
             $this->credits->change($studio, $student->id, 0, CreditService::hundredths($seat->amount), '团课冻结', $operation);
             $seats = $lesson->enrollments()->where('status', 'frozen')->get();
             if ($seats->count() < $lesson->minimum) {
+                StudioMessage::lesson($lesson, [$student->id, ...$lesson->coaches()->pluck('users.id')], $student->nickname.' 已报名，等待开班');
+
                 return;
             }
             $coaches = $lesson->coaches()->pluck('users.id')->all();
@@ -72,6 +77,7 @@ class GroupLessonService
                 $this->credits->charge($studio, $enrollment, $operation);
             }
             $lesson->update(['status' => 'open']);
+            StudioMessage::lesson($lesson, $lesson->participantIds(), '已开班');
         });
     }
 
@@ -89,6 +95,7 @@ class GroupLessonService
                 throw ValidationException::withMessages(['lesson' => '已过退出期限，或退出后不足开班人数。']);
             }
             $this->credits->release($studio, $seat, $operation);
+            StudioMessage::lesson($lesson, [$student->id, ...$lesson->coaches()->pluck('users.id')], $student->nickname.' 已退出');
         });
     }
 

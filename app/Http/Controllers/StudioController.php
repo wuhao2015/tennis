@@ -7,6 +7,8 @@ use App\Models\CreditRequest;
 use App\Models\Lesson;
 use App\Models\Membership;
 use App\Models\Studio;
+use App\Notifications\StudioMessage;
+use App\Services\StudioTransaction;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -23,6 +25,10 @@ class StudioController extends Controller
     public function show(Request $request, Studio $studio): View
     {
         $membership = $studio->memberships()->where('user_id', $request->user()?->id)->first();
+
+        if ($membership?->status !== 'approved') {
+            return view('studio', compact('studio', 'membership'));
+        }
 
         $account = CreditAccount::where('studio_id', $studio->id)->where('user_id', $request->user()?->id)->first();
         $creditRequests = CreditRequest::where('studio_id', $studio->id)
@@ -43,11 +49,13 @@ class StudioController extends Controller
 
     public function join(Request $request, Studio $studio): RedirectResponse
     {
-        DB::transaction(function () use ($request, $studio) {
-            Studio::lockForUpdate()->findOrFail($studio->id);
-            $membership = $studio->memberships()->firstOrNew(['user_id' => $request->user()->id]);
+        $data = $request->validate(['token' => 'required|uuid']);
+        $actor = $request->user();
+        StudioTransaction::run($studio, [$actor->id], $actor->id, 'membership.join', $data['token'], function (Studio $studio) use ($actor) {
+            $membership = $studio->memberships()->firstOrNew(['user_id' => $actor->id]);
             if (! $membership->exists || $membership->status === 'rejected') {
                 $membership->fill(['status' => 'pending'])->save();
+                StudioMessage::send($studio, $studio->adminIds(), $actor->nickname.' 申请入会');
             }
         });
 
@@ -57,9 +65,15 @@ class StudioController extends Controller
     public function decide(Request $request, Studio $studio, Membership $membership): RedirectResponse
     {
         Gate::authorize('manage', $studio);
-        $decision = $request->validate(['decision' => 'required|in:approved,rejected'])['decision'];
+        $data = $request->validate(['decision' => 'required|in:approved,rejected', 'token' => 'required|uuid']);
         abort_unless($membership->studio_id === $studio->id, 404);
-        $membership->whereKey($membership->id)->where('status', 'pending')->update(['status' => $decision]);
+        StudioTransaction::run($studio, [$membership->user_id], $request->user()->id, 'membership.'.$data['decision'], $data['token'], function (Studio $studio) use ($membership, $data) {
+            $membership->refresh();
+            if ($membership->status === 'pending') {
+                $membership->update(['status' => $data['decision']]);
+                StudioMessage::send($studio, [$membership->user_id], $data['decision'] === 'approved' ? '入会申请已通过' : '入会申请已拒绝');
+            }
+        });
 
         return back();
     }

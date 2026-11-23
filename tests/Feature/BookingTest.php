@@ -6,6 +6,7 @@ use App\Models\CreditAccount;
 use App\Models\Lesson;
 use App\Models\Studio;
 use App\Models\User;
+use App\Services\ScheduleService;
 use Database\Seeders\DemoSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Str;
@@ -14,6 +15,19 @@ use Tests\TestCase;
 class BookingTest extends TestCase
 {
     use RefreshDatabase;
+
+    public function test_court_capacity_uses_peak_simultaneous_occupancy(): void
+    {
+        $studio = Studio::create(['name' => '双球场', 'courts' => 2]);
+        $start = now()->toImmutable()->startOfHour()->addDay();
+        foreach ([$start->subMinutes(30), $start->addMinutes(30)] as $otherStart) {
+            Lesson::create(['studio_id' => $studio->id, 'type' => 'private', 'status' => 'confirmed', 'starts_at' => $otherStart]);
+        }
+        $schedule = app(ScheduleService::class);
+        $this->assertTrue($schedule->courtAvailable($studio, $start));
+        Lesson::create(['studio_id' => $studio->id, 'type' => 'group', 'status' => 'recruiting', 'starts_at' => $start]);
+        $this->assertFalse($schedule->courtAvailable($studio, $start));
+    }
 
     public function test_only_confirmed_private_lessons_claim_a_court_and_cancellation_requires_both_parties(): void
     {
