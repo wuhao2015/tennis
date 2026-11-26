@@ -8,6 +8,7 @@ use App\Models\Lesson;
 use App\Models\Membership;
 use App\Models\Studio;
 use App\Notifications\StudioMessage;
+use App\Services\AppConfig;
 use App\Services\StudioTransaction;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -19,7 +20,10 @@ class StudioController extends Controller
 {
     public function index(): View
     {
-        return view('home', ['studios' => Studio::with('coaches')->orderBy('id')->get()]);
+        return view('home', [
+            'studios' => Studio::with('coaches')->orderBy('id')->get(),
+            'greeting' => AppConfig::get('GREETING', config('app.name')),
+        ]);
     }
 
     public function show(Request $request, Studio $studio): View
