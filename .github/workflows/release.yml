@@ -1,0 +1,124 @@
+name: Release
+
+run-name: Release authentication (${{ github.ref_name }} @ ${{ github.sha }})
+
+"on":
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Use one group for this service, including manually triggered runs.
+# Keep the active run; GitHub retains only the latest pending run.
+concurrency:
+  group: tennis-production
+  cancel-in-progress: false
+
+# Populate repository variables from Terraform's github_actions_variables output.
+env:
+  AWS_ROLE_ARN: ${{ vars.AWS_ROLE_ARN }}
+  AWS_REGION: ${{ vars.AWS_REGION }}
+  ECR_PHP_REPOSITORY: ${{ vars.ECR_PHP_REPOSITORY }}
+  ECR_NGINX_REPOSITORY: ${{ vars.ECR_NGINX_REPOSITORY }}
+  ECS_CLUSTER: ${{ vars.ECS_CLUSTER }}
+  ECS_SERVICE: ${{ vars.ECS_SERVICE }}
+  ECS_TASK_FAMILY: ${{ vars.ECS_TASK_FAMILY }}
+  ECS_PHP_CONTAINER: php-fpm
+  ECS_NGINX_CONTAINER: nginx
+  DOCKERFILE: Dockerfile
+  DOCKER_PHP_TARGET: app
+  DOCKER_NGINX_TARGET: nginx
+
+jobs:
+  prepare:
+    name: Verify AWS release access (no deployment)
+    # workflow_dispatch also allows selecting other branches in the UI.
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Validate repository variables
+        shell: bash
+        run: |
+          missing=0
+          for variable_name in AWS_ROLE_ARN AWS_REGION ECR_PHP_REPOSITORY ECR_NGINX_REPOSITORY ECS_CLUSTER ECS_SERVICE ECS_TASK_FAMILY; do
+            if [[ -z "${!variable_name}" ]]; then
+              printf '::error::Set repository variable %s in Settings > Secrets and variables > Actions > Variables.\n' "$variable_name"
+              missing=1
+            fi
+          done
+          if [[ "$missing" -ne 0 ]]; then
+            exit 1
+          fi
+          if [[ ! "$AWS_ROLE_ARN" =~ ^arn:aws:iam::610646412385:role/itv-tennis-github-actions-release$ ]]; then
+            printf '%s\n' '::error::AWS_ROLE_ARN must be the tennis release role created by Terraform in account 610646412385.'
+            exit 1
+          fi
+
+      - name: Configure AWS credentials through OIDC
+        uses: aws-actions/configure-aws-credentials@45666896f5d8e0f10ae255413f3a4cdd03bdc8f5 # v6.3.1
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: "610646412385"
+          role-session-name: tennis-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: Verify AWS identity and ECR access
+        shell: bash
+        run: |
+          aws sts get-caller-identity
+          aws ecr describe-repositories \
+            --repository-names "$ECR_PHP_REPOSITORY" "$ECR_NGINX_REPOSITORY" \
+            --query 'repositories[].{name:repositoryName,uri:repositoryUri}' \
+            --output json
+
+      - name: Verify ECS read access
+        shell: bash
+        run: |
+          aws ecs describe-services \
+            --cluster "$ECS_CLUSTER" \
+            --services "$ECS_SERVICE" \
+            --output json > "$RUNNER_TEMP/tennis-ecs-service.json"
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          result = json.loads((Path(os.environ["RUNNER_TEMP"]) / "tennis-ecs-service.json").read_text())
+          services = result.get("services", [])
+          if result.get("failures") or len(services) != 1 or services[0].get("status") != "ACTIVE":
+              raise SystemExit("The configured ECS service was not found or is not ACTIVE.")
+          print(json.dumps({key: services[0][key] for key in ("serviceName", "status", "taskDefinition")}))
+          PY
+          aws ecs describe-task-definition \
+            --task-definition "$ECS_TASK_FAMILY" \
+            --query 'taskDefinition.{family:family,revision:revision}' \
+            --output json
+
+      - name: Summarize release configuration
+        shell: bash
+        run: |
+          printf '%s\n' \
+            '## Tennis release authentication' \
+            '' \
+            'AWS OIDC authentication and ECR/ECS read access have been verified.' \
+            'Image build, ECR push, ECS deployment and notifications will be added in later steps.' \
+            '' \
+            '| Setting | Value |' \
+            '| --- | --- |' \
+            "| Event | $GITHUB_EVENT_NAME |" \
+            "| Ref | $GITHUB_REF |" \
+            "| Commit | $GITHUB_SHA |" \
+            "| AWS region | $AWS_REGION |" \
+            "| ECS cluster / service | $ECS_CLUSTER / $ECS_SERVICE |" \
+            "| Task family | $ECS_TASK_FAMILY |" \
+            "| PHP repository / container / build target | $ECR_PHP_REPOSITORY / $ECS_PHP_CONTAINER / $DOCKER_PHP_TARGET |" \
+            "| Nginx repository / container / build target | $ECR_NGINX_REPOSITORY / $ECS_NGINX_CONTAINER / $DOCKER_NGINX_TARGET |" \
+            "| Dockerfile | $DOCKERFILE |" \
+            >> "$GITHUB_STEP_SUMMARY"
