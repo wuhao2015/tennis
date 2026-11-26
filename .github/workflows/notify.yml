@@ -1,0 +1,54 @@
+name: Release email notification
+
+"on":
+  workflow_run:
+    # Must match the release workflow's top-level name, not its filename.
+    workflows: ["Release"]
+    branches: [main]
+    types: [completed]
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  notify:
+    # Ignore pull requests, including PRs whose source branch is named main.
+    if: >-
+      github.event.workflow_run.head_repository.full_name == github.repository &&
+      (github.event.workflow_run.event == 'push' || github.event.workflow_run.event == 'workflow_dispatch')
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      # No checkout: do not execute code or download artifacts from the triggering run.
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@45666896f5d8e0f10ae255413f3a4cdd03bdc8f5 # v6.3.1
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          allowed-account-ids: "610646412385"
+
+      - name: Email release result
+        env:
+          SNS_TOPIC_ARN: ${{ vars.SNS_TOPIC_ARN }}
+          RESULT: ${{ github.event.workflow_run.conclusion }}
+          REPOSITORY: ${{ github.repository }}
+          COMMIT_SHA: ${{ github.event.workflow_run.head_sha }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+          RUN_NUMBER: ${{ github.event.workflow_run.run_number }}
+          RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          : "${SNS_TOPIC_ARN:?Set repository variable SNS_TOPIC_ARN}"
+          if [[ "$RESULT" == "success" ]]; then
+            subject="[SUCCESS] tennis release #${RUN_NUMBER}"
+          else
+            subject="[ALERT] tennis release #${RUN_NUMBER}: ${RESULT}"
+          fi
+          printf 'Repository: %s\nResult: %s\nCommit: %s\nAttempt: %s\nActions logs: %s\n' \
+            "$REPOSITORY" "$RESULT" "$COMMIT_SHA" "$RUN_ATTEMPT" "$RUN_URL" > "$RUNNER_TEMP/release-email.txt"
+          aws sns publish \
+            --topic-arn "$SNS_TOPIC_ARN" \
+            --subject "$subject" \
+            --message "file://$RUNNER_TEMP/release-email.txt"
