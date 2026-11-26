@@ -23,6 +23,7 @@ class StudioController extends Controller
         return view('home', [
             'studios' => Studio::with('coaches')->orderBy('id')->get(),
             'greeting' => AppConfig::get('GREETING', config('app.name')),
+            'displayMessage' => config('app.display_message'),
         ]);
     }
 

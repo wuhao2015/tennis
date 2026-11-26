@@ -1,4 +1,5 @@
 <x-layout title="工作室">
+<p><strong>{{ $displayMessage }}</strong></p>
 <p><strong>{{ $greeting }}</strong></p>
 @forelse($studios as $studio)
 <article><h2><a href="{{ route('studios.show', $studio) }}">{{ $studio->name }}</a></h2>

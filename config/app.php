@@ -15,6 +15,8 @@ return [
 
     'name' => env('APP_NAME', 'Laravel'),
 
+    'display_message' => env('DISPALY_MESSAGE', ''),
+
     /*
     |--------------------------------------------------------------------------
     | Application Environment
