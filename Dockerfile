@@ -31,8 +31,8 @@ RUN mkdir -p storage/framework/cache/data storage/framework/sessions storage/fra
 FROM node:24-alpine AS assets
 
 WORKDIR /var/www/html
-COPY package.json ./
-RUN npm install --ignore-scripts --no-audit --no-fund
+COPY package.json package-lock.json ./
+RUN npm ci --ignore-scripts --no-audit --no-fund
 COPY vite.config.js ./
 COPY --from=source /var/www/html/resources ./resources
 COPY --from=source /var/www/html/vendor ./vendor

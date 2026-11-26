@@ -24,3 +24,7 @@ tests
 .phpunit.cache
 .phpunit.result.cache
 *.log
+.github
+AGENTS.md
+phpunit.xml
+release-images.json

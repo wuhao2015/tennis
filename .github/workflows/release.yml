@@ -1,6 +1,6 @@
 name: Release
 
-run-name: Release authentication (${{ github.ref_name }} @ ${{ github.sha }})
+run-name: Release to ECS (${{ github.ref_name }} @ ${{ github.sha }})
 
 "on":
   push:
@@ -33,12 +33,16 @@ env:
   DOCKER_NGINX_TARGET: nginx
 
 jobs:
-  prepare:
-    name: Verify AWS release access (no deployment)
+  build_and_push:
+    name: Test, build and publish images
     # workflow_dispatch also allows selecting other branches in the UI.
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    timeout-minutes: 5
+    timeout-minutes: 45
+    outputs:
+      php_image: ${{ steps.manifest.outputs.php_image }}
+      nginx_image: ${{ steps.manifest.outputs.nginx_image }}
+      image_tag: ${{ steps.images.outputs.image_tag }}
     permissions:
       contents: read
       id-token: write
@@ -60,6 +64,44 @@ jobs:
             printf '%s\n' '::error::AWS_ROLE_ARN must be the tennis release role created by Terraform in account 610646412385.'
             exit 1
           fi
+
+      - name: Check out the release commit
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Set up PHP
+        uses: shivammathur/setup-php@eb7c497e18156a6bbabfef1d3a82760b9eda3962 # v2
+        with:
+          php-version: '8.4'
+          extensions: mbstring, pdo_sqlite, pdo_pgsql
+          coverage: none
+          tools: composer:v2
+
+      - name: Install PHP dependencies
+        run: |
+          composer validate --strict
+          composer install --no-interaction --prefer-dist --no-progress
+
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Build frontend assets
+        run: |
+          npm ci --ignore-scripts --no-audit --no-fund
+          npm run build
+
+      - name: Test deployment validation
+        run: python3 -B -m unittest discover -s .github/scripts -p 'test_*.py' -v
+
+      - name: Run application tests
+        run: |
+          touch .env
+          php artisan test --compact --fail-on-warning
 
       - name: Configure AWS credentials through OIDC
         uses: aws-actions/configure-aws-credentials@45666896f5d8e0f10ae255413f3a4cdd03bdc8f5 # v6.3.1
@@ -101,24 +143,181 @@ jobs:
             --query 'taskDefinition.{family:family,revision:revision}' \
             --output json
 
-      - name: Summarize release configuration
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3
+
+      - name: Prepare image names and log in to ECR
+        id: images
         shell: bash
         run: |
-          printf '%s\n' \
-            '## Tennis release authentication' \
-            '' \
-            'AWS OIDC authentication and ECR/ECS read access have been verified.' \
-            'Image build, ECR push, ECS deployment and notifications will be added in later steps.' \
-            '' \
-            '| Setting | Value |' \
-            '| --- | --- |' \
-            "| Event | $GITHUB_EVENT_NAME |" \
-            "| Ref | $GITHUB_REF |" \
-            "| Commit | $GITHUB_SHA |" \
-            "| AWS region | $AWS_REGION |" \
-            "| ECS cluster / service | $ECS_CLUSTER / $ECS_SERVICE |" \
-            "| Task family | $ECS_TASK_FAMILY |" \
-            "| PHP repository / container / build target | $ECR_PHP_REPOSITORY / $ECS_PHP_CONTAINER / $DOCKER_PHP_TARGET |" \
-            "| Nginx repository / container / build target | $ECR_NGINX_REPOSITORY / $ECS_NGINX_CONTAINER / $DOCKER_NGINX_TARGET |" \
-            "| Dockerfile | $DOCKERFILE |" \
-            >> "$GITHUB_STEP_SUMMARY"
+          registry="610646412385.dkr.ecr.${AWS_REGION}.amazonaws.com"
+          image_tag="sha-${GITHUB_SHA}-run-${GITHUB_RUN_ID}-attempt-${GITHUB_RUN_ATTEMPT}"
+          printf 'registry=%s\nimage_tag=%s\n' "$registry" "$image_tag" >> "$GITHUB_OUTPUT"
+          aws ecr get-login-password --region "$AWS_REGION" |
+            docker login --username AWS --password-stdin "$registry"
+
+      - name: Build and push PHP image
+        id: php
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: ${{ env.DOCKERFILE }}
+          target: ${{ env.DOCKER_PHP_TARGET }}
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.images.outputs.registry }}/${{ env.ECR_PHP_REPOSITORY }}:${{ steps.images.outputs.image_tag }}
+          labels: |
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+          cache-from: type=gha,scope=tennis-php
+          cache-to: type=gha,mode=max,scope=tennis-php
+
+      - name: Build and push Nginx image
+        id: nginx
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
+        with:
+          context: .
+          file: ${{ env.DOCKERFILE }}
+          target: ${{ env.DOCKER_NGINX_TARGET }}
+          platforms: linux/amd64
+          push: true
+          tags: ${{ steps.images.outputs.registry }}/${{ env.ECR_NGINX_REPOSITORY }}:${{ steps.images.outputs.image_tag }}
+          labels: |
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+          cache-from: type=gha,scope=tennis-nginx
+          cache-to: type=gha,mode=max,scope=tennis-nginx
+
+      - name: Verify published digests and record release images
+        id: manifest
+        env:
+          ECR_REGISTRY: ${{ steps.images.outputs.registry }}
+          IMAGE_TAG: ${{ steps.images.outputs.image_tag }}
+          PHP_DIGEST: ${{ steps.php.outputs.digest }}
+          NGINX_DIGEST: ${{ steps.nginx.outputs.digest }}
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          import re
+          import subprocess
+          from pathlib import Path
+
+          images = {}
+          for name, repository_key, container_key, digest_key in (
+              ("php", "ECR_PHP_REPOSITORY", "ECS_PHP_CONTAINER", "PHP_DIGEST"),
+              ("nginx", "ECR_NGINX_REPOSITORY", "ECS_NGINX_CONTAINER", "NGINX_DIGEST"),
+          ):
+              repository = os.environ[repository_key]
+              digest = os.environ[digest_key]
+              if not re.fullmatch(r"sha256:[0-9a-f]{64}", digest):
+                  raise SystemExit(f"Invalid {name} image digest")
+              published = subprocess.check_output([
+                  "aws", "ecr", "describe-images", "--repository-name", repository,
+                  "--image-ids", f"imageTag={os.environ['IMAGE_TAG']}",
+                  "--query", "imageDetails[0].imageDigest", "--output", "text",
+              ], text=True).strip()
+              if published != digest:
+                  raise SystemExit(f"ECR digest mismatch for {name}")
+              uri = f"{os.environ['ECR_REGISTRY']}/{repository}"
+              images[name] = {
+                  "container": os.environ[container_key],
+                  "image": f"{uri}@{digest}",
+                  "tag": f"{uri}:{os.environ['IMAGE_TAG']}",
+                  "digest": digest,
+              }
+          manifest = {
+              "commit": os.environ["GITHUB_SHA"],
+              "run_id": os.environ["GITHUB_RUN_ID"],
+              "run_attempt": os.environ["GITHUB_RUN_ATTEMPT"],
+              "image_tag": os.environ["IMAGE_TAG"],
+              "images": images,
+          }
+          Path("release-images.json").write_text(json.dumps(manifest, indent=2) + "\n")
+          with open(os.environ["GITHUB_OUTPUT"], "a") as output:
+              for name, image in images.items():
+                  output.write(f"{name}_image={image['image']}\n")
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as summary:
+              summary.write("## Tennis images published\n\n")
+              summary.write(f"Commit: {manifest['commit']}\n\n")
+              summary.write(f"Tag: {manifest['image_tag']}\n\n")
+              for name, image in images.items():
+                  summary.write(f"- {name}: {image['image']}\n")
+              summary.write("\nImages are ready for the ECS deployment job.\n")
+          PY
+
+      - name: Upload release image manifest
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: release-images-${{ github.run_id }}-${{ github.run_attempt }}
+          path: release-images.json
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Log out of ECR
+        if: always() && steps.images.outcome == 'success'
+        run: docker logout "${{ steps.images.outputs.registry }}"
+
+  deploy:
+    name: Deploy images to ECS
+    needs: build_and_push
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      PHP_IMAGE: ${{ needs.build_and_push.outputs.php_image }}
+      NGINX_IMAGE: ${{ needs.build_and_push.outputs.nginx_image }}
+      TASK_DEFINITION_FILE: tennis-task-definition.json
+      DEPLOYMENT_RECORD: tennis-deployment.json
+    steps:
+      - name: Check out release scripts
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+
+      - name: Configure AWS credentials through OIDC
+        uses: aws-actions/configure-aws-credentials@45666896f5d8e0f10ae255413f3a4cdd03bdc8f5 # v6.3.1
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          allowed-account-ids: "610646412385"
+          role-session-name: tennis-deploy-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: Prepare task definition from the active revision
+        run: python3 .github/scripts/ecs_release.py prepare
+
+      - name: Register task definition and update ECS service
+        id: ecs
+        uses: aws-actions/amazon-ecs-deploy-task-definition@a00d4d57ac0de1a99b39fe469f3d898d38717c2b # v2
+        with:
+          task-definition: ${{ env.TASK_DEFINITION_FILE }}
+          service: ${{ env.ECS_SERVICE }}
+          cluster: ${{ env.ECS_CLUSTER }}
+          wait-for-service-stability: true
+          wait-for-minutes: 20
+          wait-max-delay-seconds: 15
+
+      - name: Verify the requested revision completed
+        env:
+          EXPECTED_TASK_DEFINITION: ${{ steps.ecs.outputs.task-definition-arn }}
+        run: python3 .github/scripts/ecs_release.py verify
+
+      - name: Show service events on failure
+        if: failure()
+        run: |
+          aws ecs describe-services --cluster "$ECS_CLUSTER" --services "$ECS_SERVICE" \
+            --query 'services[].{taskDefinition:taskDefinition,deployments:deployments,events:events[:10]}'
+
+      - name: Upload deployment record
+        if: always()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: ecs-deployment-${{ github.run_id }}-${{ github.run_attempt }}
+          path: ${{ env.DEPLOYMENT_RECORD }}
+          if-no-files-found: ignore
+          retention-days: 30
